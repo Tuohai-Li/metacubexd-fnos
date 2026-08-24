@@ -1,0 +1,12 @@
+# Preserve the verified upstream release byte-for-byte. Hashed asset names and
+# service-worker manifests must not be rewritten by platform line-ending rules.
+app/www/** -text
+
+# fnOS executes these files on Linux even when the package is maintained from
+# Windows.
+cmd/* text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+manifest text eol=lf

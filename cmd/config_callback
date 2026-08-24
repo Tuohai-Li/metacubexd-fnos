@@ -1,9 +1,28 @@
 #!/bin/bash
-# 应用设置保存时执行
-# wizard 字段值通过环境变量传入（无 wizard_ 前缀）
+set -euo pipefail
+
 APP_NAME="${TRIM_APPNAME:-metacubexd}"
+APP_DIR="${TRIM_APPDEST:-/var/apps/${APP_NAME}}"
 DATA_DIR="${TRIM_PKGVAR:-/vol4/@appdata/${APP_NAME}}"
+VALUE="${mihomo_api:-http://127.0.0.1:9090}"
+
+if [ -f "${APP_DIR}/fnos_server.py" ]; then
+    SERVER="${APP_DIR}/fnos_server.py"
+elif [ -f "${APP_DIR}/target/fnos_server.py" ]; then
+    SERVER="${APP_DIR}/target/fnos_server.py"
+else
+    echo "ERROR: fnos_server.py not found" >&2
+    exit 1
+fi
+
+# Use the same URL parser as the runtime. Only replace the persisted setting
+# after validation succeeds, so a bad App Center value cannot break startup.
+NORMALIZED="$(/usr/bin/python3 "${SERVER}" --validate-core-url "${VALUE}")"
 mkdir -p "${DATA_DIR}"
-echo "${mihomo_api:-http://192.168.31.31:9090}" > "${DATA_DIR}/mihomo_api"
-chmod 644 "${DATA_DIR}/mihomo_api"
+TMP="${DATA_DIR}/.mihomo_api.$$"
+trap 'rm -f "${TMP}"' EXIT
+printf '%s\n' "${NORMALIZED}" > "${TMP}"
+chmod 644 "${TMP}"
+mv -f "${TMP}" "${DATA_DIR}/mihomo_api"
+trap - EXIT
 exit 0

@@ -4,74 +4,102 @@ set -euo pipefail
 APP_NAME="${TRIM_APPNAME:-metacubexd}"
 APP_DIR="${TRIM_APPDEST:-/var/apps/${APP_NAME}}"
 DATA_DIR="${TRIM_PKGVAR:-${APP_DIR}/var}"
-
-# 兼容两种部署布局
-if [ -d "${APP_DIR}/www" ]; then
-    WWW_DIR="${APP_DIR}/www"
-elif [ -d "${APP_DIR}/target/www" ]; then
-    WWW_DIR="${APP_DIR}/target/www"
-else
-    echo "ERROR: www dir not found" >&2; exit 1
-fi
-
 PORT="${TRIM_SERVICE_PORT:-9091}"
 LOG="${DATA_DIR}/metacubexd.log"
 PID_FILE="${DATA_DIR}/metacubexd.pid"
+CORE_URL_FILE="${DATA_DIR}/mihomo_api"
 
-# 应用设置：读取 Mihomo API 地址并写入 config.js
-apply_config() {
-    local api_url
-    if [ -f "${DATA_DIR}/mihomo_api" ]; then
-        api_url=$(cat "${DATA_DIR}/mihomo_api" | tr -d '[:space:]')
-    else
-        api_url="http://192.168.31.31:9090"
+# fnOS has used both a flat app directory and a target/ directory across
+# releases. Resolve the packaged files without changing the package layout.
+if [ -f "${APP_DIR}/fnos_server.py" ] && [ -d "${APP_DIR}/www" ]; then
+    RUNTIME_DIR="${APP_DIR}"
+elif [ -f "${APP_DIR}/target/fnos_server.py" ] && [ -d "${APP_DIR}/target/www" ]; then
+    RUNTIME_DIR="${APP_DIR}/target"
+else
+    echo "ERROR: fnos_server.py or www directory not found" >&2
+    exit 1
+fi
+
+SERVER="${RUNTIME_DIR}/fnos_server.py"
+BUNDLED_UI="${RUNTIME_DIR}/www"
+VERSION_FILE="${RUNTIME_DIR}/upstream-version"
+
+is_our_process() {
+    local pid="$1"
+    kill -0 "${pid}" 2>/dev/null || return 1
+    if [ -r "/proc/${pid}/cmdline" ]; then
+        tr '\0' ' ' < "/proc/${pid}/cmdline" | grep -qE 'fnos_server\.py|python3[^ ]* +-m +http\.server'
+        return $?
     fi
-    # 替换 config.js 中的 defaultBackendURL
-    if [ -f "${WWW_DIR}/config.js" ]; then
-        sed -i "s|defaultBackendURL: '[^']*'|defaultBackendURL: '${api_url}'|g" "${WWW_DIR}/config.js"
-        echo "[config] Mihomo API: ${api_url}" >> "${LOG}"
-    fi
+    return 0
 }
 
 start() {
     mkdir -p "${DATA_DIR}"
-    if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
-        echo "already running (pid $(cat "${PID_FILE}"))"; return 0
+    if [ ! -f "${CORE_URL_FILE}" ]; then
+        printf '%s\n' 'http://127.0.0.1:9090' > "${CORE_URL_FILE}"
+        chmod 644 "${CORE_URL_FILE}"
     fi
-    apply_config
-    cd "${WWW_DIR}"
-    nohup /usr/bin/python3 -m http.server "${PORT}" --bind 0.0.0.0 \
-        --directory "${WWW_DIR}" >> "${LOG}" 2>&1 &
+    if [ -f "${PID_FILE}" ] && is_our_process "$(cat "${PID_FILE}")"; then
+        echo "already running (pid $(cat "${PID_FILE}"))"
+        return 0
+    fi
+    rm -f "${PID_FILE}"
+    nohup /usr/bin/python3 "${SERVER}" \
+        --bind 0.0.0.0 \
+        --port "${PORT}" \
+        --bundled-ui "${BUNDLED_UI}" \
+        --bundled-version-file "${VERSION_FILE}" \
+        --data-dir "${DATA_DIR}" \
+        --core-url-file "${CORE_URL_FILE}" \
+        --log-file "${LOG}" \
+        >> "${LOG}" 2>&1 &
     echo $! > "${PID_FILE}"
-    for i in $(seq 1 10); do
-        if curl -sf "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
-            echo "started (pid $(cat "${PID_FILE}"))"; return 0
+
+    for _ in $(seq 1 20); do
+        if ! is_our_process "$(cat "${PID_FILE}")"; then
+            echo "ERROR: server exited during startup; see ${LOG}" >&2
+            rm -f "${PID_FILE}"
+            return 1
+        fi
+        if curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
+            echo "started (pid $(cat "${PID_FILE}"))"
+            return 0
         fi
         sleep 1
     done
-    echo "started, health check timed out"; return 0
+    echo "ERROR: health check timed out; see ${LOG}" >&2
+    return 1
 }
 
 stop() {
     if [ -f "${PID_FILE}" ]; then
-        kill "$(cat "${PID_FILE}")" 2>/dev/null || true
+        pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && is_our_process "${pid}"; then
+            kill "${pid}" 2>/dev/null || true
+            for _ in 1 2 3 4 5; do
+                kill -0 "${pid}" 2>/dev/null || break
+                sleep 1
+            done
+        fi
         rm -f "${PID_FILE}"
     fi
-    pkill -f "http.server.*${PORT}" 2>/dev/null || true
     echo "stopped"
 }
 
 status() {
-    if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
-        echo "running"; return 0
+    if [ -f "${PID_FILE}" ] && is_our_process "$(cat "${PID_FILE}")"; then
+        echo "running"
+        return 0
     fi
-    echo "stopped"; return 1
+    echo "stopped"
+    return 1
 }
 
 case "${1:-start}" in
     start) start ;;
     stop) stop ;;
     status) status ;;
-    restart) stop; sleep 1; start ;;
+    restart) stop; start ;;
     *) echo "Usage: $0 {start|stop|status|restart}"; exit 1 ;;
 esac

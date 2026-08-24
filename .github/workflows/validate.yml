@@ -1,0 +1,24 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Check lifecycle scripts
+        run: bash -n cmd/*
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate fnOS package layout
+        run: python scripts/validate_package.py

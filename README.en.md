@@ -17,15 +17,18 @@ Mihomo Dashboard — manage rules, nodes, and connections. Connects directly to 
 ## ✨ Features
 
 - 🖥️ **Mihomo dashboard** — manage rules, nodes, connections
-- 🔗 **Direct local Mihomo API** — no extra service needed
+- 🔗 **Same-origin Mihomo proxy** — works with local/LAN cores and FN Connect HTTPS
+- 🔄 **Verified stable UI updates** — atomic GitHub Release updates with rollback
+- ⬆️ **Stable core updates** — forwards the core updater with `channel=stable&force=true`
+- 📥 **Server-side subscription import** — fetches remote profiles as a Mihomo client when providers reject browser CORS/User-Agent requests
 - 📦 **One-click deploy** — App Center manual install
 
 ## 🚀 Quick Install
 
-1. Download `metacubexd-x.x.x.fpk` from [Releases](https://github.com/techysy/metacubexd-fnos/releases)
+1. Download `metacubexd-x.x.x.fpk` from [Releases](https://github.com/Tuohai-Li/metacubexd-fnos/releases)
 2. fnOS **App Center → Manual Install** → select the fpk
 3. Click the **MetaCubeXD** icon (port 9091)
-4. The panel auto-connects to Mihomo API (default `http://192.168.31.31:9090`)
+4. The panel connects through the fnOS same-origin proxy (the NAS targets `http://127.0.0.1:9090` by default)
 
 ## 📖 Usage
 
@@ -35,7 +38,7 @@ Configure the Mihomo API address in **App Center → App Settings** (no code cha
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Mihomo API address | `http://192.168.31.31:9090` | Mihomo external-controller address |
+| Mihomo API address | `http://127.0.0.1:9090` | Server-side external-controller URL; another LAN HTTP/HTTPS URL is also supported |
 
 **Restart** the app to apply (App Center → Stop → Start).
 
@@ -47,15 +50,15 @@ Configure the Mihomo API address in **App Center → App Settings** (no code cha
 | Mihomo API | 9090 |
 | Mihomo HTTP proxy | 7890 |
 
-## ⚠️ Remote Access Note (Mixed Content)
+## Remote Access and Updates
 
-Opening via **fnOS remote access (`https://<app>.techysy.fnos.net` / FN Connect)** loads the page over **HTTPS** while Mihomo is **HTTP** — the browser blocks the request as **mixed content**, showing "Connection blocked".
+LAN and FN Connect access both use the app's same-origin `/mihomo` HTTP/WebSocket proxy. This keeps a local HTTP core usable from an HTTPS fnOS remote page without mixed-content or CORS failures.
 
-**Working options**:
+When MetaCubeXD reports a stable UI update, click the UI version badge. The fnOS adapter downloads the official `compressed-dist.tgz`, verifies GitHub's SHA-256 digest, and atomically switches the persisted UI. A failed update leaves the current UI untouched.
 
-1. **LAN direct**: open `http://192.168.31.101:9091` in a browser (HTTP page to HTTP backend, no mixed content)
-2. **fnOS desktop Chrome** (fygo-browser): open `http://127.0.0.1:9091` on the NAS itself — fully bypasses the issue
-3. **Public HTTPS**: reverse-proxy Mihomo to a public HTTPS address (costly)
+The Core version button invokes the separately deployed Mihomo core's own updater through the same-origin proxy. It explicitly selects the stable channel and forces a fresh update check; the dashboard never overwrites an external core binary itself.
+
+Remote profile imports are fetched by the fnOS adapter and then passed to MetaCubeXD's existing authenticated Core import flow. Private/reserved destinations, unsafe redirects, oversized responses, and non-configuration content are rejected.
 
 > Detailed troubleshooting: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 
@@ -72,11 +75,14 @@ fnpack build   # produces metacubexd.fpk
 
 ## 🔮 Roadmap
 
-Repack when upstream [metacubex/metacubexd](https://github.com/metacubex/metacubexd) releases a new version:
+The scheduled GitHub workflow tracks stable [MetaCubeXD releases](https://github.com/MetaCubeX/metacubexd/releases) and opens a validated synchronization PR. Manual synchronization is also available:
 
-- Track upstream updates
-- New node type/protocol support
-- Dashboard UI/UX improvements
+```bash
+python3 scripts/sync_upstream.py
+python3 scripts/validate_package.py
+python3 scripts/build_fpk.py  # development systems without fnpack
+fnpack build                 # official fnOS/Linux tool
+```
 
 ## 📚 Related
 

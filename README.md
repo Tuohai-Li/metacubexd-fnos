@@ -3,7 +3,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/techysy/metacubexd-fnos?label=Latest&color=blue)](https://github.com/techysy/metacubexd-fnos/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/techysy/metacubexd-fnos/blob/main/LICENSE)
 [![fnOS 1.1.31xx](https://img.shields.io/badge/fnOS-1.1.31xx+-orange.svg)](https://developer.fnnas.com/docs/guide)
-[![MetaCubeXD v1.271.0](https://img.shields.io/badge/MetaCubeXD-v1.271.0-purple.svg)](https://github.com/metacubex/metacubexd)
+[![MetaCubeXD](https://img.shields.io/github/v/release/MetaCubeX/metacubexd?label=MetaCubeXD&color=purple)](https://github.com/MetaCubeX/metacubexd/releases)
 
 > Mihomo Dashboard — 代理面板，管理规则、节点、连接。支持直连内网 Mihomo API。
 >
@@ -15,10 +15,10 @@
 
 ## 快速开始 / Quick Start
 
-1. 从 [Releases](https://github.com/techysy/metacubexd-fnos/releases) 下载 `metacubexd-x.x.x.fpk`
+1. 从 [Releases](https://github.com/Tuohai-Li/metacubexd-fnos/releases) 下载 `metacubexd-x.x.x.fpk`
 2. 飞牛 App Center → **手动安装** → 选择 fpk 文件
 3. 桌面出现 **MetaCubeXD** 图标，点击打开面板（端口 9091）
-4. 面板自动连接 Mihomo API（默认 `http://192.168.31.31:9090`）
+4. 面板通过 fnOS 同源代理自动连接 Mihomo API（默认由 NAS 访问 `http://127.0.0.1:9090`）
 
 ## 应用设置 / App Settings
 
@@ -26,9 +26,18 @@
 
 | 设置项 | 默认值 | 说明 |
 |---|---|---|
-| Mihomo API 地址 | `http://192.168.31.31:9090` | Mihomo 的 external-controller 地址 |
+| Mihomo API 地址 | `http://127.0.0.1:9090` | NAS 服务端访问的 external-controller 地址；也可填其他 LAN HTTP/HTTPS 地址 |
 
-修改后需**重启应用**生效（App Center → 停止 → 启动）。
+修改后需**重启应用**生效（App Center → 停止 → 启动）。浏览器始终连接面板自身的 `/mihomo`，因此 `127.0.0.1` 正确指向 NAS，而不是访问者电脑。
+
+## 连接与更新
+
+- **局域网与 FN Connect**：HTTP API 和实时流量/日志 WebSocket 都经同源代理转发，避免跨域和 HTTPS 混合内容拦截。
+- **UI 在线更新**：MetaCubeXD 检测到稳定版后，点击 UI 版本即可下载官方 `compressed-dist.tgz`；应用校验 GitHub SHA-256 后原子切换，失败保留旧版。
+- **Core 在线更新**：点击 Core 版本时由同源代理调用外部 Mihomo 的自更新接口，并明确使用 `channel=stable&force=true`；core 二进制仍由其自身安全替换。
+- **远程配置导入**：配置页的“拉取远程配置”由 fnOS 服务端以 Mihomo 客户端身份下载，再沿用 MetaCubeXD 原有流程导入 Core；支持会拒绝浏览器 User-Agent/CORS 的订阅服务。
+- **包内兜底**：运行时 UI 保存在 fnOS 数据目录，`app/www` 始终保留为离线恢复副本。
+- **上游同步**：仓库每天检查 MetaCubeXD Stable Release，并通过 PR 更新包内 UI 与 manifest，不直接写入 `main`。
 
 ## 端口 / Port
 
@@ -38,11 +47,18 @@
 
 ## 🔮 Future / 迭代计划
 
-等待上游 [metacubex/metacubexd](https://github.com/metacubex/metacubexd) 发布新版本后重新打包：
+上游同步脚本可手动运行：
 
-- 跟进上游版本更新（新功能、Bug 修复）
-- 新增节点类型/协议支持
-- 面板 UI/UX 优化
+```bash
+python3 scripts/sync_upstream.py
+python3 scripts/validate_package.py
+python3 scripts/build_fpk.py  # 无 fnpack 的开发机
+fnpack build                 # fnOS/Linux 官方工具
+```
+
+同步只替换官方 UI 发行资源；fnOS 的 manifest、生命周期、代理与数据目录结构保持独立。
+
+> 订阅 URL 通常包含访问密钥。请勿公开分享；如果曾经泄露，请在服务商后台重新生成。
 
 > 📖 上游项目：[metacubex/metacubexd](https://github.com/metacubex/metacubexd) · [在线 Demo](https://metacubex.github.io/metacubexd/)
 
