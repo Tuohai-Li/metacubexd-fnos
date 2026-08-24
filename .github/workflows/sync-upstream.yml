@@ -1,0 +1,64 @@
+name: sync MetaCubeXD upstream
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional stable MetaCubeXD version (for example 1.273.0)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-metacubexd-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Synchronize verified stable release
+        id: sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          args=()
+          if [ -n "${REQUESTED_VERSION}" ]; then
+            args+=(--version "${REQUESTED_VERSION}")
+          fi
+          python scripts/sync_upstream.py "${args[@]}" --github-output "${GITHUB_OUTPUT}"
+
+      - name: Check lifecycle scripts
+        run: bash -n cmd/*
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate fnOS package layout
+        run: python scripts/validate_package.py
+
+      - name: Create or update synchronization PR
+        if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/metacubexd-upstream
+          delete-branch: true
+          commit-message: 'chore: sync MetaCubeXD to ${{ steps.sync.outputs.tag }}'
+          title: 'chore: sync MetaCubeXD to ${{ steps.sync.outputs.tag }}'
+          body: |
+            Automated stable upstream synchronization.
+
+            - Release: ${{ steps.sync.outputs.release_url }}
+            - Version: `${{ steps.sync.outputs.tag }}`
+            - SHA-256: `${{ steps.sync.outputs.digest }}`
+            - Validation: lifecycle syntax, Python tests, fnOS package layout

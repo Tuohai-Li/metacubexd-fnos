@@ -6,7 +6,7 @@
         "type": "text",
         "field": "mihomo_api",
         "label": "Mihomo API 地址",
-        "initValue": "http://192.168.31.31:9090",
+        "initValue": "http://127.0.0.1:9090",
         "rules": [{"required": true, "message": "必填"}]
       }
     ]

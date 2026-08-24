@@ -1,1 +1,3 @@
 *.fpk
+__pycache__/
+*.py[cod]
