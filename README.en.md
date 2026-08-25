@@ -2,9 +2,10 @@
 
 Mihomo Dashboard — manage rules, nodes, and connections. Connects directly to local Mihomo API.
 
-[![GitHub release](https://img.shields.io/github/v/release/techysy/metacubexd-fnos?label=Release&color=blue)](https://github.com/techysy/metacubexd-fnos/releases)
-[![Downloads](https://img.shields.io/github/downloads/techysy/metacubexd-fnos/total?label=Downloads&color=green)](https://github.com/techysy/metacubexd-fnos/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/techysy/metacubexd-fnos/blob/main/LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/Tuohai-Li/metacubexd-fnos?label=Release&color=blue)](https://github.com/Tuohai-Li/metacubexd-fnos/releases)
+[![Downloads](https://img.shields.io/github/downloads/Tuohai-Li/metacubexd-fnos/total?label=Downloads&color=green)](https://github.com/Tuohai-Li/metacubexd-fnos/releases)
+[![Validate](https://github.com/Tuohai-Li/metacubexd-fnos/actions/workflows/validate.yml/badge.svg)](https://github.com/Tuohai-Li/metacubexd-fnos/actions/workflows/validate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/Tuohai-Li/metacubexd-fnos/blob/main/LICENSE)
 [![fnOS 1.1.31xx](https://img.shields.io/badge/fnOS-1.1.31xx+-orange.svg)](https://developer.fnnas.com/docs/guide)
 [![MetaCubeXD](https://img.shields.io/github/v/release/metacubex/metacubexd?label=MetaCubeXD&color=purple)](https://github.com/metacubex/metacubexd)
 
