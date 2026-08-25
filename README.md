@@ -1,15 +1,25 @@
-# MetaCubeXD fnOS App
+# MetaCubeXD for fnOS
 
-[![GitHub release](https://img.shields.io/github/v/release/techysy/metacubexd-fnos?label=Latest&color=blue)](https://github.com/techysy/metacubexd-fnos/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/techysy/metacubexd-fnos/blob/main/LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/Tuohai-Li/metacubexd-fnos?label=Latest&color=blue)](https://github.com/Tuohai-Li/metacubexd-fnos/releases)
+[![Validate](https://github.com/Tuohai-Li/metacubexd-fnos/actions/workflows/validate.yml/badge.svg)](https://github.com/Tuohai-Li/metacubexd-fnos/actions/workflows/validate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/Tuohai-Li/metacubexd-fnos/blob/main/LICENSE)
 [![fnOS 1.1.31xx](https://img.shields.io/badge/fnOS-1.1.31xx+-orange.svg)](https://developer.fnnas.com/docs/guide)
 [![MetaCubeXD](https://img.shields.io/github/v/release/MetaCubeX/metacubexd?label=MetaCubeXD&color=purple)](https://github.com/MetaCubeX/metacubexd/releases)
 
-> Mihomo Dashboard — 代理面板，管理规则、节点、连接。支持直连内网 Mihomo API。
+> 面向飞牛 NAS（fnOS）的 MetaCubeXD 应用包：管理 Mihomo 的节点、规则、连接、日志与配置。
 >
-> Mihomo Dashboard — manage rules, nodes, and connections. Connects directly to local Mihomo API.
+> 内置同源 HTTP/WebSocket 代理，可在局域网和 FN Connect HTTPS 环境中访问 NAS 内部的 Mihomo API。
 
 将 [MetaCubeXD](https://github.com/metacubex/metacubexd) 打包为飞牛 NAS (fnOS) 桌面窗口应用。
+
+## 主要特性
+
+- **FN Connect 可用**：浏览器只访问面板自身的 `/mihomo`，NAS 服务端再连接 Mihomo，避免 HTTPS 混合内容与浏览器跨域限制。
+- **同 NAS 默认可用**：默认后端为 `http://127.0.0.1:9090`，这里的回环地址指向 NAS，而不是访问者设备。
+- **完整实时代理**：支持普通 HTTP API，以及流量、日志、连接等 WebSocket 数据。
+- **安全更新与回退**：UI 更新校验官方 SHA-256 后原子切换，失败时保留旧版并可回退到包内资源。
+- **服务端订阅导入**：由 fnOS 服务端下载远程配置，兼容限制浏览器 User-Agent 或 CORS 的订阅服务，并包含 SSRF 防护。
+- **自动跟进上游**：每日检查 MetaCubeXD Stable Release，通过 PR 更新 UI 与包版本。
 
 ---
 
@@ -20,6 +30,12 @@
 3. 桌面出现 **MetaCubeXD** 图标，点击打开面板（端口 9091）
 4. 面板通过 fnOS 同源代理自动连接 Mihomo API（默认由 NAS 访问 `http://127.0.0.1:9090`）
 
+### 使用条件
+
+- fnOS `1.1.31xx` 或更高版本
+- x86_64 NAS
+- Mihomo `external-controller` 已在 NAS 的 `9090` 端口运行，或存在其他 NAS 可访问的 HTTP/HTTPS 控制地址
+
 ## 应用设置 / App Settings
 
 安装后可在 **App Center → 应用设置** 中配置 Mihomo API 地址，无需手动改代码：
@@ -29,6 +45,17 @@
 | Mihomo API 地址 | `http://127.0.0.1:9090` | NAS 服务端访问的 external-controller 地址；也可填其他 LAN HTTP/HTTPS 地址 |
 
 修改后需**重启应用**生效（App Center → 停止 → 启动）。浏览器始终连接面板自身的 `/mihomo`，因此 `127.0.0.1` 正确指向 NAS，而不是访问者电脑。
+
+### 访问链路
+
+```text
+浏览器（局域网或 FN Connect HTTPS）
+  └─ 面板 :9091/mihomo/*
+       └─ fnOS 同源代理
+            └─ Mihomo http://127.0.0.1:9090/*
+```
+
+无需在浏览器中放行“不安全内容”，也无需把 Mihomo 的 `9090` 控制端口直接暴露到公网。
 
 ## 连接与更新
 
@@ -45,7 +72,7 @@
 - **Mihomo API**：9090
 - **Mihomo HTTP 代理**：7890
 
-## 🔮 Future / 迭代计划
+## 开发与构建
 
 上游同步脚本可手动运行：
 
