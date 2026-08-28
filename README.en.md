@@ -54,6 +54,8 @@ Configure the Mihomo API address in **App Center → App Settings** (no code cha
 
 LAN and FN Connect access both use the app's same-origin `/mihomo` HTTP/WebSocket proxy. This keeps a local HTTP core usable from an HTTPS fnOS remote page without mixed-content or CORS failures.
 
+If the Core listens only on the NAS LAN address, a failed default loopback connection falls back to the private NAS IP used to open the app. You can also set `http://NAS-LAN-IP:9090` explicitly in the app settings.
+
 When MetaCubeXD reports a stable UI update, click the UI version badge. The fnOS adapter downloads the official `compressed-dist.tgz`, verifies GitHub's SHA-256 digest, and atomically switches the persisted UI. A failed update leaves the current UI untouched.
 
 The Core version button invokes the separately deployed Mihomo core's own updater through the same-origin proxy. It explicitly selects the stable channel and forces a fresh update check; the dashboard never overwrites an external core binary itself.
@@ -80,8 +82,8 @@ The scheduled GitHub workflow tracks stable [MetaCubeXD releases](https://github
 ```bash
 python3 scripts/sync_upstream.py
 python3 scripts/validate_package.py
-python3 scripts/build_fpk.py  # development systems without fnpack
-fnpack build                 # official fnOS/Linux tool
+python3 scripts/build_fpk.py  # downloads/verifies official fnpack 1.2.3, then builds and audits
+fnpack build                 # direct alternative when official fnpack is installed
 ```
 
 ## 📚 Related

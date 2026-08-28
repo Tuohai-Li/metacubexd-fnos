@@ -134,6 +134,88 @@ def join_target_url(base_url: str, suffix_path: str, query: str = "") -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, query, ""))
 
 
+def _safe_host_fallback(value: str | None) -> str | None:
+    """Return a literal local/LAN host from an incoming HTTP Host header."""
+
+    if not value:
+        return None
+    try:
+        hostname = urlsplit("//" + value.strip()).hostname
+        address = ipaddress.ip_address(hostname or "")
+    except ValueError:
+        return None
+    if address.is_unspecified or address.is_multicast or address.is_link_local:
+        return None
+    if not (address.is_loopback or address.is_private):
+        return None
+    return address.compressed
+
+
+def local_private_addresses() -> list[str]:
+    """Best-effort discovery of the NAS addresses visible to this process."""
+
+    candidates: list[str] = []
+    with contextlib.suppress(OSError):
+        for family, _kind, _proto, _canonical, sockaddr in socket.getaddrinfo(
+            socket.gethostname(), None, type=socket.SOCK_STREAM
+        ):
+            if family in {socket.AF_INET, socket.AF_INET6}:
+                candidates.append(sockaddr[0])
+    # UDP connect selects the outbound interface without sending a packet.
+    for family, target in (
+        (socket.AF_INET, ("1.1.1.1", 80)),
+        (socket.AF_INET6, ("2606:4700:4700::1111", 80, 0, 0)),
+    ):
+        with contextlib.suppress(OSError):
+            probe = socket.socket(family, socket.SOCK_DGRAM)
+            try:
+                probe.connect(target)
+                candidates.append(probe.getsockname()[0])
+            finally:
+                probe.close()
+
+    result: list[str] = []
+    for candidate in candidates:
+        safe = _safe_host_fallback(f"[{candidate}]" if ":" in candidate else candidate)
+        if safe and not ipaddress.ip_address(safe).is_loopback and safe not in result:
+            result.append(safe)
+    return result
+
+
+def core_target_urls(configured_url: str, suffix_path: str, query: str, request_host: str | None) -> list[str]:
+    """Build proxy targets, with a LAN fallback for the default loopback core.
+
+    Some fnOS Mihomo packages bind ``external-controller`` only to the NAS LAN
+    address. A browser could reach that address in older releases, while the
+    same-origin adapter first talks to loopback. Only loopback configurations
+    get a fallback, so an explicitly configured remote core is never replaced.
+    """
+
+    configured = validate_core_url(configured_url)
+    targets = [join_target_url(configured, suffix_path, query)]
+    parsed = urlsplit(configured)
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname or "").is_loopback
+    except ValueError:
+        loopback = (parsed.hostname or "").lower() == "localhost"
+    if not loopback:
+        return targets
+
+    fallback_hosts = [_safe_host_fallback(request_host), *local_private_addresses()]
+    for fallback_host in fallback_hosts:
+        if not fallback_host or fallback_host == parsed.hostname:
+            continue
+        host_literal = f"[{fallback_host}]" if ":" in fallback_host else fallback_host
+        port = parsed.port
+        default_port = 443 if parsed.scheme == "https" else 80
+        authority = host_literal if port in {None, default_port} else f"{host_literal}:{port}"
+        fallback_base = urlunsplit((parsed.scheme, authority, parsed.path, "", ""))
+        target = join_target_url(fallback_base, suffix_path, query)
+        if target not in targets:
+            targets.append(target)
+    return targets
+
+
 def stable_core_upgrade_query(query: str) -> str:
     """Add stable/forced defaults without overriding explicit API choices."""
 
@@ -741,7 +823,7 @@ def dynamic_config_javascript() -> bytes:
   window.__METACUBEXD_CONFIG__ = { defaultBackendURL: proxyURL, githubToken: '' };
 
   try {
-    const marker = 'metacubexd_fnos_proxy_v1';
+    const marker = 'metacubexd_fnos_proxy_v2';
     if (!localStorage.getItem(marker)) {
       const list = JSON.parse(localStorage.getItem('endpointList') || '[]');
       const selected = localStorage.getItem('selectedEndpoint') || '';
@@ -1018,15 +1100,19 @@ class FnosRequestHandler(SimpleHTTPRequestHandler):
             logging.warning("subscription fetch failed: %s", type(exc).__name__)
             self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)}, method)
 
-    def _core_target(self, parsed) -> tuple[str, str, int, str]:
+    def _core_targets(self, parsed) -> list[tuple[str, str, int, str]]:
         suffix = parsed.path[len(PROXY_PREFIX) :] or "/"
-        target_url = join_target_url(self.server.state.core_url(), suffix, parsed.query)
-        target = urlsplit(target_url)
-        port = target.port or (443 if target.scheme == "https" else 80)
-        request_target = target.path or "/"
-        if target.query:
-            request_target += "?" + target.query
-        return target.scheme, target.hostname or "", port, request_target
+        result = []
+        for target_url in core_target_urls(
+            self.server.state.core_url(), suffix, parsed.query, self.headers.get("Host")
+        ):
+            target = urlsplit(target_url)
+            port = target.port or (443 if target.scheme == "https" else 80)
+            request_target = target.path or "/"
+            if target.query:
+                request_target += "?" + target.query
+            result.append((target.scheme, target.hostname or "", port, request_target))
+        return result
 
     def _forward_headers(self, target_host: str, target_port: int, scheme: str) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -1049,38 +1135,54 @@ class FnosRequestHandler(SimpleHTTPRequestHandler):
 
     def _proxy_http(self, method: str, parsed) -> None:
         try:
-            scheme, host, port, target = self._core_target(parsed)
             body = self._read_request_body()
-            headers = self._forward_headers(host, port, scheme)
-            connection_type = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
-            is_core_upgrade = urlsplit(target).path.rstrip("/").endswith("/upgrade")
-            timeout = 300 if is_core_upgrade else 75
-            if is_core_upgrade:
-                logging.info("forwarding Mihomo core upgrade request to %s", target)
-            connection = connection_type(host, port, timeout=timeout)
-            try:
-                connection.request(method, target, body=body if body else None, headers=headers)
-                response = connection.getresponse()
-                payload = response.read()
-                self.send_response(response.status, response.reason)
-                response_headers = response.getheaders()
-                for name, value in response_headers:
-                    if name.lower() not in HOP_BY_HOP_HEADERS and name.lower() != "content-length":
-                        self.send_header(name, value)
-                if method == "HEAD":
-                    upstream_length = next(
-                        (value for name, value in response_headers if name.lower() == "content-length"),
-                        "0",
-                    )
-                    self.send_header("Content-Length", upstream_length)
-                else:
-                    self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Via", "metacubexd-fnos")
-                self.end_headers()
-                if method != "HEAD" and payload:
-                    self.wfile.write(payload)
-            finally:
-                connection.close()
+            targets = self._core_targets(parsed)
+            last_error: BaseException | None = None
+            for index, (scheme, host, port, target) in enumerate(targets):
+                headers = self._forward_headers(host, port, scheme)
+                connection_type = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+                is_core_upgrade = urlsplit(target).path.rstrip("/").endswith("/upgrade")
+                timeout = 300 if is_core_upgrade else 75
+                connection = connection_type(host, port, timeout=timeout)
+                try:
+                    connection.connect()
+                except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
+                    last_error = exc
+                    connection.close()
+                    if index + 1 >= len(targets):
+                        raise
+                    continue
+                try:
+                    if is_core_upgrade:
+                        logging.info("forwarding Mihomo core upgrade request to %s", target)
+                    connection.request(method, target, body=body if body else None, headers=headers)
+                    response = connection.getresponse()
+                    payload = response.read()
+                    self.send_response(response.status, response.reason)
+                    response_headers = response.getheaders()
+                    for name, value in response_headers:
+                        if name.lower() not in HOP_BY_HOP_HEADERS and name.lower() != "content-length":
+                            self.send_header(name, value)
+                    if method == "HEAD":
+                        upstream_length = next(
+                            (value for name, value in response_headers if name.lower() == "content-length"),
+                            "0",
+                        )
+                        self.send_header("Content-Length", upstream_length)
+                    else:
+                        self.send_header("Content-Length", str(len(payload)))
+                    if index:
+                        self.send_header("X-Mihomo-Target-Fallback", "lan")
+                        logging.info("Mihomo loopback unavailable; using LAN address %s:%s", host, port)
+                    self.send_header("Via", "metacubexd-fnos")
+                    self.end_headers()
+                    if method != "HEAD" and payload:
+                        self.wfile.write(payload)
+                    return
+                finally:
+                    connection.close()
+            if last_error is not None:
+                raise last_error
         except (FnosServerError, OSError, http.client.HTTPException, ssl.SSLError) as exc:
             logging.warning("Mihomo proxy failed: %s", exc)
             with contextlib.suppress(OSError):
@@ -1133,10 +1235,24 @@ class FnosRequestHandler(SimpleHTTPRequestHandler):
     def _proxy_websocket(self, parsed) -> None:
         upstream: socket.socket | None = None
         try:
-            scheme, host, port, target = self._core_target(parsed)
-            upstream = socket.create_connection((host, port), timeout=15)
-            if scheme == "https":
-                upstream = ssl.create_default_context().wrap_socket(upstream, server_hostname=host)
+            targets = self._core_targets(parsed)
+            for index, (scheme, host, port, target) in enumerate(targets):
+                try:
+                    upstream = socket.create_connection((host, port), timeout=15)
+                    if scheme == "https":
+                        upstream = ssl.create_default_context().wrap_socket(upstream, server_hostname=host)
+                    if index:
+                        logging.info("Mihomo WebSocket loopback unavailable; using LAN address %s:%s", host, port)
+                    break
+                except (OSError, ssl.SSLError):
+                    if upstream is not None:
+                        with contextlib.suppress(OSError):
+                            upstream.close()
+                        upstream = None
+                    if index + 1 >= len(targets):
+                        raise
+            if upstream is None:
+                raise FnosServerError("Mihomo WebSocket connection failed")
             headers = self._forward_headers(host, port, scheme)
             headers["Connection"] = "Upgrade"
             headers["Upgrade"] = "websocket"

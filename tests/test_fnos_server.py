@@ -254,7 +254,7 @@ class URLTests(unittest.TestCase):
         script = dynamic_config_javascript().decode()
         self.assertIn("defaultBackendURL: proxyURL", script)
         self.assertIn("https://api.github.com", script)
-        self.assertIn("metacubexd_fnos_proxy_v1", script)
+        self.assertIn("metacubexd_fnos_proxy_v2", script)
         self.assertIn("serviceWorker.getRegistrations", script)
         self.assertIn("isCoreUpgrade", script)
         self.assertIn("isRemoteConfig", script)
@@ -364,6 +364,28 @@ class AdapterServerTests(unittest.TestCase):
                 response = connection.getresponse()
                 response.read()
                 self.assertEqual(response.status, 508)
+                connection.close()
+
+    def test_loopback_core_falls_back_to_nas_host_header(self) -> None:
+        core = ThreadingHTTPServer(("127.0.0.1", 0), FakeCoreHandler)
+        with RunningServer(core):
+            # 127.0.0.2 has no listener. Retry the literal local address from
+            # Host while retaining the configured core port.
+            state = self.state(core.server_address[1])
+            self.core_file.write_text(f"http://127.0.0.2:{core.server_address[1]}\n")
+            adapter = create_server("127.0.0.1", 0, state)
+            with RunningServer(adapter):
+                connection = HTTPConnection("127.0.0.1", adapter.server_address[1], timeout=5)
+                connection.request(
+                    "GET",
+                    "/mihomo/version",
+                    headers={"Host": f"127.0.0.1:{adapter.server_address[1]}"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.getheader("X-Mihomo-Target-Fallback"), "lan")
+                self.assertEqual(payload["version"], "v1.19.9")
                 connection.close()
 
     def test_remote_subscription_is_fetched_server_side_then_imported_by_core(self) -> None:

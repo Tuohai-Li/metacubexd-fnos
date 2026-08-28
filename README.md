@@ -32,7 +32,7 @@
 
 ## 连接与更新
 
-- **局域网与 FN Connect**：HTTP API 和实时流量/日志 WebSocket 都经同源代理转发，避免跨域和 HTTPS 混合内容拦截。
+- **局域网与 FN Connect**：HTTP API 和实时流量/日志 WebSocket 都经同源代理转发，避免跨域和 HTTPS 混合内容拦截。若 Core 只监听 NAS 局域网地址，默认回环连接失败后会安全回退到当前访问使用的 NAS 私网 IP；也可在应用设置中直接填写 `http://NAS局域网IP:9090`。
 - **UI 在线更新**：MetaCubeXD 检测到稳定版后，点击 UI 版本即可下载官方 `compressed-dist.tgz`；应用校验 GitHub SHA-256 后原子切换，失败保留旧版。
 - **Core 在线更新**：点击 Core 版本时由同源代理调用外部 Mihomo 的自更新接口，并明确使用 `channel=stable&force=true`；core 二进制仍由其自身安全替换。
 - **远程配置导入**：配置页的“拉取远程配置”由 fnOS 服务端以 Mihomo 客户端身份下载，再沿用 MetaCubeXD 原有流程导入 Core；支持会拒绝浏览器 User-Agent/CORS 的订阅服务。
@@ -52,8 +52,8 @@
 ```bash
 python3 scripts/sync_upstream.py
 python3 scripts/validate_package.py
-python3 scripts/build_fpk.py  # 无 fnpack 的开发机
-fnpack build                 # fnOS/Linux 官方工具
+python3 scripts/build_fpk.py  # 自动下载并校验官方 fnpack 1.2.3 后构建、审计
+fnpack build                 # 已安装官方 fnpack 时也可直接使用
 ```
 
 同步只替换官方 UI 发行资源；fnOS 的 manifest、生命周期、代理与数据目录结构保持独立。

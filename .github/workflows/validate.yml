@@ -22,3 +22,5 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate fnOS package layout
         run: python scripts/validate_package.py
+      - name: Build and audit installable FPK with verified official fnpack
+        run: python scripts/build_fpk.py --output "${RUNNER_TEMP}/metacubexd-ci.fpk"
